@@ -65,11 +65,46 @@ export default function PatientDashboard({
   }, [patients]);
 
   const stats = [
-    { label: 'ผู้ป่วยทั้งหมด', val: counts.total,    icon: <Users size={22} />,        bg: '#eff6ff', ic: '#2563eb' },
-    { label: 'ผู้ป่วยทั่วไป',   val: counts.general,  icon: <UserCheck size={22} />,    bg: '#ecfdf5', ic: '#10b981' },
-    { label: 'ผู้สูงอายุ',      val: counts.elderly,  icon: <AlertTriangle size={22} />, bg: '#fef2f2', ic: '#ef4444' },
-    { label: 'ผู้พิการ',        val: counts.disabled, icon: <CheckCircle size={22} />,   bg: '#ecfdf5', ic: '#0051ff' },
-    { label: 'จำหน่าย',        val: counts.finished, icon: <Archive size={22} />,       bg: '#f8fafc', ic: '#64748b' },
+    {
+      label: 'ผู้ป่วยทั้งหมด',
+      val: counts.total,
+      icon: <Users size={22} />,
+      bg: 'linear-gradient(135deg, #dbeafe, #bfdbfe)',
+      ic: '#1d4ed8',
+      border: '#93c5fd',
+    },
+    {
+      label: 'ผู้ป่วยทั่วไป',
+      val: counts.general,
+      icon: <UserCheck size={22} />,
+      bg: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
+      ic: '#15803d',
+      border: '#86efac',
+    },
+    {
+      label: 'ผู้สูงอายุ',
+      val: counts.elderly,
+      icon: <AlertTriangle size={22} />,
+      bg: 'linear-gradient(135deg, #fee2e2, #fecaca)',
+      ic: '#dc2626',
+      border: '#fca5a5',
+    },
+    {
+      label: 'ผู้พิการ',
+      val: counts.disabled,
+      icon: <CheckCircle size={22} />,
+      bg: 'linear-gradient(135deg, #dbeafe, #bfdbfe)',
+      ic: '#2563eb',
+      border: '#93c5fd',
+    },
+    {
+      label: 'จำหน่าย',
+      val: counts.finished,
+      icon: <Archive size={22} />,
+      bg: 'linear-gradient(135deg, #f1f5f9, #e2e8f0)',
+      ic: '#475569',
+      border: '#cbd5e1',
+    },
   ];
 
   const userAvatarBg = (name: string) => {
@@ -81,10 +116,9 @@ export default function PatientDashboard({
     <div className="pt-page">
       <div className="pt-page-header">
         <div>
-          <h1 className="pt-page-title">📊 ภาพรวมระบบผู้ป่วย</h1>
+          <h1 className="pt-page-title">ภาพรวมระบบผู้ป่วย</h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <p className="pt-page-sub" style={{ margin: 0 }}>เทศบาลตำบลสันผักหวาน — ข้อมูล ณ วันนี้</p>
-
             {isLoggedIn && (
               <button
                 className="pt-btn pt-btn-primary"
@@ -145,12 +179,23 @@ export default function PatientDashboard({
         </div>
       </div>
 
+      {/* ── Stat Cards ── */}
       <div className="pt-stats-grid">
         {stats.map((s) => (
           <div key={s.label} className="pt-stat-card">
-            <div className="pt-stat-icon" style={{ background: s.bg, color: s.ic }}>{s.icon}</div>
+            <div
+              className="pt-stat-icon"
+              style={{
+                background: s.bg,
+                color: s.ic,
+                border: `1.5px solid ${s.border}`,
+                boxShadow: `0 4px 12px ${s.border}88`,
+              }}
+            >
+              {s.icon}
+            </div>
             <div>
-              <div className="pt-stat-num">{s.val}</div>
+              <div className="pt-stat-num" style={{ color: s.ic }}>{s.val}</div>
               <div className="pt-stat-label">{s.label}</div>
             </div>
           </div>
