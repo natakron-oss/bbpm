@@ -1,5 +1,5 @@
 // src/LoginPage.tsx
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Lock, User } from 'lucide-react';
 import logoImg from './assets/logo.jpg';
 
@@ -34,6 +34,18 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
 
+  // --- mouse parallax state (background only) ---
+  const [mouse, setMouse] = useState({ x: 0, y: 0 });
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = rootRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;  // -1 ... 1
+    const y = ((e.clientY - rect.top) / rect.height) * 2 - 1;  // -1 ... 1
+    setMouse({ x, y });
+  };
+
   const handleLogin = async () => {
     if (!username || !password) { setError('กรุณากรอกข้อมูลให้ครบ'); return; }
     setLoading(true); setError('');
@@ -53,22 +65,114 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   };
 
   return (
-    <div className="login-page-root" style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'linear-gradient(135deg, #fdf2f8 0%, #fce7f3 100%)',
-      fontFamily: "'Sarabun', system-ui, sans-serif",
-    }}>
-      <div style={{
-        background: 'white',
-        borderRadius: '20px',
-        padding: '40px',
-        width: '380px',
-        boxShadow: '0 8px 40px rgba(219,39,119,0.12)',
-        border: '1px solid #fce7f3',
-      }}>
+    <div
+      ref={rootRef}
+      onMouseMove={handleMouseMove}
+      className="login-page-root"
+      style={{
+        position: 'relative',
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'linear-gradient(135deg, #fdf2f8 0%, #fce7f3 100%)',
+        fontFamily: "'Sarabun', system-ui, sans-serif",
+        overflow: 'hidden',
+      }}
+    >
+      {/* keyframes for fast drifting blobs */}
+      <style>{`
+        @keyframes drift1 {
+          0%   { transform: translate(0px, 0px) scale(1); }
+          50%  { transform: translate(60px, 90px) scale(1.15); }
+          100% { transform: translate(0px, 0px) scale(1); }
+        }
+        @keyframes drift2 {
+          0%   { transform: translate(0px, 0px) scale(1); }
+          50%  { transform: translate(-80px, -50px) scale(1.1); }
+          100% { transform: translate(0px, 0px) scale(1); }
+        }
+        @keyframes drift3 {
+          0%   { transform: translate(0px, 0px) scale(1); }
+          50%  { transform: translate(50px, -80px) scale(1.08); }
+          100% { transform: translate(0px, 0px) scale(1); }
+        }
+        .login-card-anim {
+          animation: cardIn 0.5s ease;
+        }
+        @keyframes cardIn {
+          from { opacity: 0; transform: translateY(12px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
+      {/* Background blobs: faster drift + stronger mouse parallax */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '-120px',
+          left: '-100px',
+          width: '380px',
+          height: '380px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle at 30% 30%, #f9a8d4, transparent 70%)',
+          filter: 'blur(10px)',
+          opacity: 0.6,
+          animation: 'drift1 6s ease-in-out infinite',
+          transform: `translate(${mouse.x * 40}px, ${mouse.y * 40}px)`,
+          transition: 'transform 0.25s ease-out',
+          pointerEvents: 'none',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          bottom: '-150px',
+          right: '-120px',
+          width: '420px',
+          height: '420px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle at 60% 60%, #db2777, transparent 70%)',
+          filter: 'blur(14px)',
+          opacity: 0.35,
+          animation: 'drift2 8s ease-in-out infinite',
+          transform: `translate(${mouse.x * -50}px, ${mouse.y * -50}px)`,
+          transition: 'transform 0.25s ease-out',
+          pointerEvents: 'none',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          top: '20%',
+          right: '8%',
+          width: '260px',
+          height: '260px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle at 40% 40%, #fbcfe8, transparent 70%)',
+          filter: 'blur(8px)',
+          opacity: 0.5,
+          animation: 'drift3 7s ease-in-out infinite',
+          transform: `translate(${mouse.x * 30}px, ${mouse.y * 30}px)`,
+          transition: 'transform 0.25s ease-out',
+          pointerEvents: 'none',
+        }}
+      />
+
+      {/* Login card — fixed, does NOT move with mouse */}
+      <div
+        className="login-card-anim"
+        style={{
+          position: 'relative',
+          zIndex: 1,
+          background: 'white',
+          borderRadius: '20px',
+          padding: '40px',
+          width: '380px',
+          boxShadow: '0 8px 40px rgba(219,39,119,0.12)',
+          border: '1px solid #fce7f3',
+        }}
+      >
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: '28px' }}>
           <div style={{
@@ -152,6 +256,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           disabled={loading}
           style={{
             width: '100%', padding: '12px',
+            background: 'linear-gradient(135deg, #db2777, #be185d)',
             color: 'white', border: 'none', borderRadius: '10px',
             fontSize: '15px', fontWeight: 700,
             fontFamily: "'Sarabun', sans-serif",

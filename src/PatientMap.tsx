@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { MapPin, Plus, X } from 'lucide-react';
+import { MapPin, Plus, X, ChevronUp, ChevronDown } from 'lucide-react';
 import type { Patient } from './patientTypes';
 import {
   PATIENT_STATUS_CONFIG,
@@ -25,6 +25,53 @@ L.Icon.Default.mergeOptions({
 const MAP_CENTER: [number, number] = [18.7060, 98.9510];
 const MAP_ZOOM = 14;
 
+// ตำแหน่งเทศบาลตำบลสันผักหวาน อ.หางดง จ.เชียงใหม่
+const TOWN_HALL_POSITION: [number, number] = [18.7049294, 98.9661012];
+const TOWN_HALL_NAME = 'เทศบาลตำบลสันผักหวาน';
+const TOWN_HALL_ADDRESS = '258 หมู่ 2 ถ.รอบเมืองเชียงใหม่ 121 ต.สันผักหวาน อ.หางดง จ.เชียงใหม่ 50230';
+
+// OSRM public demo server — คำนวณเส้นทางตามถนนจริง (driving)
+const OSRM_BASE = 'https://router.project-osrm.org/route/v1/driving';
+
+// คำนวณระยะทางแบบเส้นตรง (Haversine) หน่วยกิโลเมตร — ใช้เป็น fallback เท่านั้น
+function haversineDistanceKm(a: [number, number], b: [number, number]) {
+  const toRad = (v: number) => (v * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(b[0] - a[0]);
+  const dLng = toRad(b[1] - a[1]);
+  const lat1 = toRad(a[0]);
+  const lat2 = toRad(b[0]);
+  const sinDLat = Math.sin(dLat / 2);
+  const sinDLng = Math.sin(dLng / 2);
+  const h = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLng * sinDLng;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// เรียก OSRM เพื่อดึงเส้นทางตามถนนจริง คืนค่า [lat,lng][] + ระยะทาง(กม.) + เวลา(นาที)
+async function fetchRoadRoute(
+  from: [number, number],
+  to: [number, number]
+): Promise<{ coords: [number, number][]; distanceKm: number; durationMin: number } | null> {
+  try {
+    const url = `${OSRM_BASE}/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const route = data?.routes?.[0];
+    if (!route) return null;
+    const coords: [number, number][] = route.geometry.coordinates.map(
+      ([lng, lat]: [number, number]) => [lat, lng]
+    );
+    return {
+      coords,
+      distanceKm: route.distance / 1000,
+      durationMin: route.duration / 60,
+    };
+  } catch {
+    return null;
+  }
+}
+
 interface PatientMapProps {
   patients: Patient[];
   selectedId?: string | null;
@@ -42,13 +89,26 @@ export default function PatientMap({
   const mapRef          = useRef<L.Map | null>(null);
   const markersRef      = useRef<Map<string, L.Marker>>(new Map());
   const tempMarkerRef   = useRef<L.Marker | null>(null);
+  const townHallMarkerRef   = useRef<L.Marker | null>(null);
+  const routeLineRef       = useRef<L.Polyline | null>(null);
+  const routeRequestIdRef  = useRef(0); // ป้องกัน race condition ตอนสลับผู้ป่วยเร็วๆ
   const addModeRef         = useRef(false); // ref เพื่อให้ click handler อ่านค่าปัจจุบันได้
   const onSelectPatientRef = useRef(onSelectPatient); // ป้องกัน stale closure
+  const sidebarListRef     = useRef<HTMLDivElement>(null); // สำหรับเลื่อนรายชื่อผู้ป่วย
 
   const [addMode, setAddMode] = useState(false);
+  const [routeLoading, setRouteLoading] = useState(false);
 
   // sync ref ทุกครั้งที่ prop เปลี่ยน
   useEffect(() => { onSelectPatientRef.current = onSelectPatient; }, [onSelectPatient]);
+
+  // ─── เลื่อนรายชื่อผู้ป่วยขึ้น/ลง ─────────────────────────────────────────
+  const scrollList = (direction: 'up' | 'down') => {
+    const el = sidebarListRef.current;
+    if (!el) return;
+    const amount = el.clientHeight * 0.7;
+    el.scrollBy({ top: direction === 'up' ? -amount : amount, behavior: 'smooth' });
+  };
 
   // ─── Init map ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -64,6 +124,35 @@ export default function PatientMap({
       attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       maxZoom: 19,
     }).addTo(map);
+
+    // ─── หมุดเทศบาลตำบลสันผักหวาน ───────────────────────────────────────
+    const townHallIcon = L.divIcon({
+      className: '',
+      html: `
+        <div style="
+          width: 42px; height: 42px; border-radius: 50%;
+          background: #1d4ed8; color: white;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 20px;
+          border: 3px solid white;
+          box-shadow: 0 0 0 3px #1d4ed888, 0 4px 12px rgba(0,0,0,0.4);
+        ">🏛️</div>
+      `,
+      iconSize: [42, 42],
+      iconAnchor: [21, 21],
+    });
+
+    const townHallMarker = L.marker(TOWN_HALL_POSITION, { icon: townHallIcon, zIndexOffset: 1000 })
+      .bindPopup(
+        `<div style="font-family:'Sarabun',sans-serif;padding:4px;">
+          <div style="font-weight:700;font-size:14px;color:#0f172a;">🏛️ ${TOWN_HALL_NAME}</div>
+          <div style="font-size:12px;color:#475569;margin-top:6px;">📍 ${TOWN_HALL_ADDRESS}</div>
+          <div style="font-size:12px;color:#64748b;margin-top:6px;">📞 053-131532</div>
+        </div>`,
+        { closeButton: false }
+      )
+      .addTo(map);
+    townHallMarkerRef.current = townHallMarker;
 
     // คลิกบนแผนที่ — ถ้าอยู่ใน add mode วาง marker ชั่วคราวแล้วเปิด modal
     map.on('click', (e: L.LeafletMouseEvent) => {
@@ -119,6 +208,8 @@ export default function PatientMap({
       mapRef.current = null;
       markersRef.current.clear();
       tempMarkerRef.current = null;
+      townHallMarkerRef.current = null;
+      routeLineRef.current = null;
     };
   }, []);
 
@@ -221,14 +312,71 @@ export default function PatientMap({
     });
   }, [patients, selectedId]);
 
-  // ─── Fly to selected ──────────────────────────────────────────────────────
+  // ─── Fly to selected + วาดเส้นทางถนนจริงไปเทศบาล ───────────────────────────
   useEffect(() => {
-    if (!mapRef.current || !selectedId) return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    // ลบเส้นทางเก่าก่อนทุกครั้ง
+    if (routeLineRef.current) {
+      routeLineRef.current.remove();
+      routeLineRef.current = null;
+    }
+    setRouteLoading(false);
+
+    if (!selectedId) return;
     const pt = patients.find((p) => p.id === selectedId);
-    if (!pt) return;
-    mapRef.current.flyTo([pt.lat, pt.lng], 17, { duration: 0.8 });
+    if (!pt || !Number.isFinite(pt.lat) || !Number.isFinite(pt.lng)) return;
+
+    const patientPos: [number, number] = [pt.lat, pt.lng];
+    const requestId = ++routeRequestIdRef.current;
+
+    // ซูมไปที่บ้านผู้ป่วยก่อนระหว่างรอเส้นทาง
+    map.flyTo(patientPos, 16, { duration: 0.6 });
     markersRef.current.get(pt.id)?.openPopup();
-  }, [selectedId]);
+    setRouteLoading(true);
+
+    fetchRoadRoute(patientPos, TOWN_HALL_POSITION).then((result) => {
+      // ถ้าเลือกผู้ป่วยคนอื่นไปแล้วระหว่างรอ ให้ทิ้งผลลัพธ์นี้
+      if (requestId !== routeRequestIdRef.current) return;
+      setRouteLoading(false);
+
+      let pathCoords: [number, number][];
+      let distanceKm: number;
+      let labelPrefix: string;
+      let durationLabel = '';
+
+      if (result) {
+        pathCoords = result.coords;
+        distanceKm = result.distanceKm;
+        labelPrefix = '🚗 เส้นทางถนน';
+        durationLabel = ` · ⏱️ ~${Math.round(result.durationMin)} นาที`;
+      } else {
+        // fallback: เส้นตรงถ้า OSRM ใช้ไม่ได้
+        pathCoords = [patientPos, TOWN_HALL_POSITION];
+        distanceKm = haversineDistanceKm(patientPos, TOWN_HALL_POSITION);
+        labelPrefix = '📏 เส้นตรง (ประมาณ)';
+      }
+
+      const line = L.polyline(pathCoords, {
+        color: '#1d4ed8',
+        weight: 5,
+        opacity: 0.85,
+        lineJoin: 'round',
+        dashArray: result ? undefined : '8, 8',
+      }).addTo(map);
+
+      line.bindTooltip(
+        `🏛️ ${labelPrefix} ~${distanceKm.toFixed(2)} กม.${durationLabel}`,
+        { permanent: true, direction: 'center', className: 'pt-route-tooltip' }
+      );
+
+      routeLineRef.current = line;
+
+      // ปรับมุมมองให้เห็นเส้นทางทั้งหมด
+      map.fitBounds(line.getBounds(), { padding: [60, 60], maxZoom: 17, animate: true });
+    });
+  }, [selectedId, patients]);
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
@@ -250,8 +398,23 @@ export default function PatientMap({
         </div>
       )}
 
+      {/* แถบบอกสถานะกำลังโหลดเส้นทาง */}
+      {routeLoading && (
+        <div
+          style={{
+            position: 'absolute', top: '12px', left: '50%', transform: 'translateX(-50%)',
+            background: 'white', borderRadius: '999px', padding: '6px 16px',
+            fontSize: '13px', color: '#1d4ed8', fontWeight: 600,
+            boxShadow: '0 2px 10px rgba(0,0,0,0.15)', zIndex: 1000,
+            fontFamily: "'Sarabun', sans-serif",
+          }}
+        >
+          🚗 กำลังค้นหาเส้นทางถนน...
+        </div>
+      )}
+
       {/* Sidebar */}
-      <div className="pt-map-sidebar pt-map-sidebar-right">
+      <div className="pt-map-sidebar pt-map-sidebar-right" style={{ display: 'flex', flexDirection: 'column' }}>
         <div className="pt-map-sidebar-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <MapPin size={15} color="#2563eb" />
@@ -275,39 +438,81 @@ export default function PatientMap({
           </div>
         )}
 
-        <div className="pt-map-list">
-          {patients.map((pt) => {
-            const sc = PATIENT_STATUS_CONFIG[pt.status];
-            return (
-              <div
-                key={pt.id}
-                className={`pt-map-item ${selectedId === pt.id ? 'selected' : ''}`}
-                onClick={() => {
-                  if (addMode) return;
-                  onSelectPatient(pt);
-                }}
-                style={{ cursor: addMode ? 'not-allowed' : 'pointer', opacity: addMode ? 0.5 : 1 }}
-              >
+        {/* แถวเดียวกัน: รายชื่อ + ปุ่มเลื่อนขึ้นลง */}
+        <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: '4px' }}>
+          <div ref={sidebarListRef} className="pt-map-list" style={{ flex: 1, overflowY: 'auto' }}>
+            {patients.map((pt) => {
+              const sc = PATIENT_STATUS_CONFIG[pt.status];
+              return (
                 <div
-                  className="pt-avatar pt-avatar-sm"
-                  style={{ background: avatarColor(pt.first_name) }}
+                  key={pt.id}
+                  className={`pt-map-item ${selectedId === pt.id ? 'selected' : ''}`}
+                  onClick={() => {
+                    if (addMode) return;
+                    onSelectPatient(pt);
+                  }}
+                  style={{ cursor: addMode ? 'not-allowed' : 'pointer', opacity: addMode ? 0.5 : 1 }}
                 >
-                  {initials(pt.first_name, pt.last_name)}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="pt-patient-name" style={{ fontSize: '13px' }}>
-                    {pt.first_name} {pt.last_name}
+                  <div
+                    className="pt-avatar pt-avatar-sm"
+                    style={{ background: avatarColor(pt.first_name) }}
+                  >
+                    {initials(pt.first_name, pt.last_name)}
                   </div>
-                  <div className="pt-patient-sub" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {pt.address}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="pt-patient-name" style={{ fontSize: '13px' }}>
+                      {pt.first_name} {pt.last_name}
+                    </div>
+                    <div className="pt-patient-sub" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {pt.address}
+                    </div>
                   </div>
+                  <span className="pt-dot" style={{ background: sc.color, width: 8, height: 8, flexShrink: 0 }} />
                 </div>
-                <span className="pt-dot" style={{ background: sc.color, width: 8, height: 8, flexShrink: 0 }} />
-              </div>
-            );
-          })}
-          {patients.length === 0 && (
-            <div className="pt-empty">ไม่มีข้อมูลผู้ป่วย</div>
+              );
+            })}
+            {patients.length === 0 && (
+              <div className="pt-empty">ไม่มีข้อมูลผู้ป่วย</div>
+            )}
+          </div>
+
+          {/* ปุ่มเลื่อนขึ้น/ลง */}
+          {patients.length > 0 && (
+            <div style={{
+              display: 'flex', flexDirection: 'column', justifyContent: 'center',
+              gap: '6px', paddingRight: '2px',
+            }}>
+              <button
+                onClick={() => scrollList('up')}
+                title="เลื่อนขึ้น"
+                style={{
+                  width: '28px', height: '28px', borderRadius: '8px',
+                  border: '1px solid #e2e8f0', background: '#ffffff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', color: '#2563eb', boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = '#eff6ff')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = '#ffffff')}
+              >
+                <ChevronUp size={16} />
+              </button>
+              <button
+                onClick={() => scrollList('down')}
+                title="เลื่อนลง"
+                style={{
+                  width: '28px', height: '28px', borderRadius: '8px',
+                  border: '1px solid #e2e8f0', background: '#ffffff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', color: '#2563eb', boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = '#eff6ff')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = '#ffffff')}
+              >
+                <ChevronDown size={16} />
+              </button>
+            </div>
           )}
         </div>
       </div>
