@@ -52,7 +52,7 @@ export default function PatientList({
     <div className="pt-page">
       <div className="pt-page-header">
         <div>
-          <h1 className="pt-page-title">👥 รายชื่อผู้ป่วย</h1>
+          <h1 className="pt-page-title">รายชื่อผู้ป่วย</h1>
           <p className="pt-page-sub">ทั้งหมด {patients.length} ราย</p>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
