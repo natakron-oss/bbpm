@@ -1,12 +1,15 @@
 {
     "experimentalServices": {
         "frontend": {
+            "entrypoint": ".",
             "routePrefix": "/",
             "framework": "vite"
         },
         "backend": {
-            "root": "backend",
-            "routePrefix": "/_/backend"
+            "entrypoint": "backend",
+            "routePrefix": "/_/backend",
+            "framework": "nestjs"
         }
     }
 }
+
