@@ -7,6 +7,7 @@ const SPREADSHEET_ID = (import.meta.env.VITE_PATIENT_SPREADSHEET_ID as string) ?
 const API_KEY        = (import.meta.env.VITE_GOOGLE_API_KEY as string) ?? '';
 const SHEETS_BASE    = 'https://sheets.googleapis.com/v4/spreadsheets';
 const USERS_SHEET    = 'user';
+const API_URL        = (import.meta.env.VITE_API_URL as string) || '/_/backend';
 
 const isMockMode = () => !SPREADSHEET_ID || !API_KEY;
 
@@ -56,7 +57,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   setError('');
 
   try {
-    const response = await fetch('http://localhost:3000/auth/login', {
+    const response = await fetch(`${API_URL}/auth/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
