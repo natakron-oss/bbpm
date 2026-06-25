@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { EncryptionModule } from './encryption/encryption.module';
 import { PatientsModule } from './patients/patients.module';   
 import { TreatmentsModule } from './treatments/treatments.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   
@@ -15,6 +16,8 @@ import { TreatmentsModule } from './treatments/treatments.module';
     ConfigModule.forRoot({ isGlobal: true }),
      PatientsModule,
     TreatmentsModule,
+    UsersModule,
+    
     TypeOrmModule.forRoot({                       
       type: 'postgres',
       host: process.env.DB_HOST,
@@ -24,6 +27,7 @@ import { TreatmentsModule } from './treatments/treatments.module';
       database: process.env.DB_DATABASE,
       autoLoadEntities: true,
       synchronize: true,
+      
     }),
 
     AuthModule,

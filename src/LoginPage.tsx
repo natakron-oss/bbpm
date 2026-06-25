@@ -47,22 +47,40 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   };
 
   const handleLogin = async () => {
-    if (!username || !password) { setError('กรุณากรอกข้อมูลให้ครบ'); return; }
-    setLoading(true); setError('');
-    try {
-      const users = isMockMode() ? MOCK_USERS : await fetchUsers();
-      const found = users.find((u) => u.username === username && u.password === password);
-      if (found) {
-        onLogin(found.username);
-      } else {
-        setError('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
-      }
-    } catch {
-      setError('เกิดข้อผิดพลาด กรุณาลองใหม่');
-    } finally {
-      setLoading(false);
+  if (!username || !password) {
+    setError('กรุณากรอกข้อมูลให้ครบ');
+    return;
+  }
+
+  setLoading(true);
+  setError('');
+
+  try {
+    const response = await fetch('http://localhost:3000/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        username,
+        password,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message);
     }
-  };
+
+    onLogin(data.user.username);
+  } catch (error) {
+    console.error(error);
+    setError('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div
